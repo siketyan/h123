@@ -5,6 +5,18 @@ An experimental HTTP server in Rust that supports HTTP/1.1, HTTP/2, and HTTP/3 o
 > This is an experimental project and not intended for production uses.
 
 ## 📦 Getting started
+### 🐳 Using Docker (recommended)
+```shell
+docker run \
+    -p 127.0.0.1:443:443/tcp \
+    -p 127.0.0.1:443:443/udp \
+    -v $(pwd)/htdocs:/htdocs \
+    ghcr.io/siketyan/h123:latest
+```
+
+Easy!
+
+### 🏗 Classic style
 1. Clone this repository.
 2. Prepare your TLS server certificate, or use the default self-signed one.
 3. Run the server with the command:
