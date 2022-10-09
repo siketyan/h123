@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::sync::Mutex;
 
-use crate::convert::{Adapter, Error as ConversionError};
+use crate::convert::{Adapter, Error as ConversionError, HttpHeaderAdapter};
 
 pub use endpoint::{Endpoint, Error};
 
@@ -46,3 +46,5 @@ impl Adapter<(), Bytes> for BodyAdapter {
         Ok(())
     }
 }
+
+impl HttpHeaderAdapter for BodyAdapter {}

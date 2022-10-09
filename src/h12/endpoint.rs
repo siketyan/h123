@@ -75,12 +75,13 @@ where
                     .unwrap_or_else(|| "<unknown>".to_owned()),
             );
 
-            let service = self.service.clone();
+            let service = Arc::clone(&self.service);
             async move {
                 Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
-                    let service = service.clone();
+                    let service = Arc::clone(&service);
                     async move {
-                        match Self::adapter(request, &service).await {
+                        let adapter = BodyAdapter::new(self.bind_to.port());
+                        match Self::handle(adapter, request, &service).await {
                             Ok(r) => Ok::<_, Infallible>(r),
                             Err(e) => {
                                 error!("{}", e);
@@ -107,8 +108,11 @@ where
         Ok(server.await?)
     }
 
-    async fn adapter(request: Request<Body>, service: &Arc<S>) -> Result<Response<Body>, Error> {
-        let adapter = BodyAdapter;
+    async fn handle(
+        adapter: BodyAdapter,
+        request: Request<Body>,
+        service: &Arc<S>,
+    ) -> Result<Response<Body>, Error> {
         let response = call_service(service, adapter.u_to_v(request).await?)
             .await
             .map_err(|e| Error::Service(Box::new(e)))?;
