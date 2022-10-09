@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
+use http::header::CONTENT_TYPE;
 use http::{Request, Response, StatusCode};
 use hyper::service::Service;
 use tokio::fs::File;
@@ -73,13 +74,17 @@ impl Service<Request<Bytes>> for StaticFileService {
                     .body(Bytes::new())?);
             }
 
+            let content_type = mime_guess::from_path(path.clone()).first_or_octet_stream();
             let file = File::open(path).await?;
             let mut buffer = Vec::<u8>::with_capacity(file.metadata().await?.len() as usize);
             let mut reader = BufReader::new(file);
 
             reader.read_to_end(&mut buffer).await?;
 
-            Ok(Response::new(Bytes::from(buffer)))
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, content_type.as_ref())
+                .body(Bytes::from(buffer))?)
         })
     }
 }
