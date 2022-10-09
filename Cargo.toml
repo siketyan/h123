@@ -1,0 +1,36 @@
+[package]
+name = "h123"
+description = "An experimental HTTP server in Rust that supports HTTP/1.1, HTTP/2, and HTTP/3 over QUIC."
+version = "0.1.0"
+license = "Apache-2.0"
+homepage = "https://github.com/siketyan/h123"
+repository = "https://github.com/siketyan/h123.git"
+readme = "README.md"
+edition = "2021"
+authors = [
+    "Naoki Ikeguchi <me@s6n.jp>",
+]
+exclude = [
+    "htdocs",
+    "cert.pem",
+    "privkey.pem",
+]
+
+[dependencies]
+async-trait = "0.1.57"
+bytes = "1.2"
+clap = { version = "4.0", features = ["derive"] }
+futures = "0.3.24"
+h3 = { git = "https://github.com/hyperium/h3.git", branch = "master" }
+h3-quinn = { git = "https://github.com/hyperium/h3.git", branch = "master" }
+http = "0.2.8"
+hyper = { version = "0.14.20", features = ["http1", "http2", "server", "tcp"] }
+hyper-rustls = "0.23.0"
+quinn = "0.8.5"
+rustls = "0.20.6"
+rustls-pemfile = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.21", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
+tokio-rustls = "0.23.4"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
