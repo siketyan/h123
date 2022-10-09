@@ -2,6 +2,8 @@ use std::io::Read;
 use std::sync::Arc;
 
 use bytes::{Buf, Bytes};
+use h3::server::RequestStream;
+use h3_quinn::BidiStream;
 use http::header::CONTENT_LENGTH;
 use http::{HeaderMap, Request, Response};
 use hyper::service::Service;
@@ -53,11 +55,13 @@ impl Connection {
 
     pub async fn begin<S, E>(mut self, service: &Arc<S>) -> Result<(), Error>
     where
-        S: Service<Request<Bytes>, Response = Response<Bytes>, Error = E> + Send + Sync + Clone,
+        S: Service<Request<Bytes>, Response = Response<Bytes>, Error = E>,
+        S: Send + Sync + Clone + 'static,
+        S::Future: Send,
         E: std::error::Error + Send + 'static,
     {
         loop {
-            let (request, mut stream) = match self.inner.accept().await? {
+            let (request, stream) = match self.inner.accept().await? {
                 Some(v) => v,
                 None => return Ok(()),
             };
@@ -68,32 +72,47 @@ impl Connection {
                 request.uri()
             );
 
-            let content_length = request
-                .headers()
-                .get(CONTENT_LENGTH)
-                .and_then(|v| {
-                    (|| -> Result<usize, Box<dyn std::error::Error>> { Ok(v.to_str()?.parse()?) })()
-                        .ok()
-                })
-                .unwrap_or(0);
-
-            let mut buffer = Vec::with_capacity(content_length);
-            if let Some(data) = stream.recv_data().await? {
-                data.reader().read_to_end(&mut buffer)?;
-            }
-
-            let adapter = BodyAdapter::new(Bytes::from(buffer));
-            let response = call_service(service, adapter.u_to_v(request).await?)
-                .await
-                .map_err(|e| Error::Service(Box::new(e)))?;
-
-            stream
-                .send_response(adapter.v_to_u(response).await?)
-                .await?;
-
-            stream.send_data(adapter.into_inner()?).await?;
-            stream.send_trailers(HeaderMap::new()).await?;
-            stream.finish().await?;
+            tokio::spawn(Self::handle(request, stream, Arc::clone(service)));
         }
+    }
+
+    async fn handle<S, E>(
+        request: Request<()>,
+        mut stream: RequestStream<BidiStream<Bytes>, Bytes>,
+        service: Arc<S>,
+    ) -> Result<(), Error>
+    where
+        S: Service<Request<Bytes>, Response = Response<Bytes>, Error = E> + Send + Sync + Clone,
+        S::Future: Send,
+        E: std::error::Error + Send + 'static,
+    {
+        let content_length = request
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|v| {
+                (|| -> Result<usize, Box<dyn std::error::Error>> { Ok(v.to_str()?.parse()?) })()
+                    .ok()
+            })
+            .unwrap_or(0);
+
+        let mut buffer = Vec::with_capacity(content_length);
+        if let Some(data) = stream.recv_data().await? {
+            data.reader().read_to_end(&mut buffer)?;
+        }
+
+        let adapter = BodyAdapter::new(Bytes::from(buffer));
+        let response = call_service(&service, adapter.u_to_v(request).await?)
+            .await
+            .map_err(|e| Error::Service(Box::new(e)))?;
+
+        stream
+            .send_response(adapter.v_to_u(response).await?)
+            .await?;
+
+        stream.send_data(adapter.into_inner()?).await?;
+        stream.send_trailers(HeaderMap::new()).await?;
+        stream.finish().await?;
+
+        Ok(())
     }
 }
