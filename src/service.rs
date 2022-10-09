@@ -13,6 +13,8 @@ use tokio::io::AsyncReadExt;
 use tokio::io::BufReader;
 use tracing::info;
 
+const INDEX_FILES: &[&str] = &["index.html", "index.htm"];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("HTTP semantics error: {0}")]
@@ -50,6 +52,25 @@ impl StaticFileService {
             )
             .collect::<PathBuf>()
     }
+
+    fn find_in_root<P>(&self, path: P) -> Option<PathBuf>
+    where
+        P: AsRef<Path>,
+    {
+        let path = self.real_path_of(path);
+        if !path.exists() {
+            return None;
+        }
+
+        if path.is_dir() {
+            return INDEX_FILES
+                .iter()
+                .map(|&f| path.join(PathBuf::from(f)))
+                .find(|p| p.exists() && p.is_file());
+        }
+
+        Some(path)
+    }
 }
 
 impl Service<Request<Bytes>> for StaticFileService {
@@ -62,17 +83,19 @@ impl Service<Request<Bytes>> for StaticFileService {
     }
 
     fn call(&mut self, req: Request<Bytes>) -> Self::Future {
-        let path = PathBuf::from(req.uri().path());
-        let path = self.real_path_of(&path);
-
-        info!("Real path is {}", path.to_str().unwrap());
+        let path = self.find_in_root(PathBuf::from(req.uri().path()));
 
         Box::pin(async move {
-            if !path.exists() || !path.is_file() {
-                return Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(Bytes::new())?);
-            }
+            let path = match path {
+                Some(p) => p,
+                _ => {
+                    return Ok(Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Bytes::new())?)
+                }
+            };
+
+            info!("Real path is {}", path.to_str().unwrap());
 
             let content_type = mime_guess::from_path(path.clone()).first_or_octet_stream();
             let file = File::open(path).await?;
