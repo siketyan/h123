@@ -28,14 +28,10 @@ impl BodyAdapter {
         }
     }
 
-    fn as_inner(&self) -> Result<Bytes, ConversionError> {
-        Ok(Arc::try_unwrap(Arc::clone(&self.buffer))
+    fn into_inner(self) -> Result<Bytes, ConversionError> {
+        Ok(Arc::try_unwrap(self.buffer)
             .map_err(|_| ConversionError::boxed(AdapterError::Mutex))?
             .into_inner())
-    }
-
-    fn into_inner(self) -> Result<Bytes, ConversionError> {
-        self.as_inner()
     }
 }
 
@@ -46,8 +42,7 @@ impl Adapter<(), Bytes> for BodyAdapter {
     }
 
     async fn v_to_u(&self, v: Bytes) -> Result<(), ConversionError> {
-        let buffer = Arc::clone(&self.buffer);
-        *buffer.lock().await = v;
+        *self.buffer.lock().await = v;
         Ok(())
     }
 }
