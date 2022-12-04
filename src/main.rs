@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use rustls::{Certificate, PrivateKey};
+use tracing::{error, info};
 
 use h123::service::StaticFileService;
 use h123::Server;
@@ -33,29 +34,52 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+
+    tokio::select!(
+        r = run() => {
+            match r {
+                Ok(_) => (),
+                Err(e) => error!("{}", e),
+            }
+        },
+        _ = sigint.recv() => {},
+        _ = sigterm.recv() => {},
+    );
+
+    info!("Gracefully shutting down...");
+
+    Ok(())
+}
+
+async fn run() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let args = Cli::parse();
+    let rustls_config = &rustls::ServerConfig::builder()
+        .with_safe_default_cipher_suites()
+        .with_safe_default_kx_groups()
+        .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])?
+        .with_no_client_auth()
+        .with_single_cert(
+            rustls_pemfile::certs(&mut BufReader::new(File::open(args.cert_chain_pem)?))?
+                .into_iter()
+                .map(Certificate)
+                .collect(),
+            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(
+                args.private_key_pem,
+            )?))?
+            .into_iter()
+            .map(PrivateKey)
+            .next()
+            .unwrap(),
+        )?;
 
     Ok(Server::new(
-        &rustls::ServerConfig::builder()
-            .with_safe_default_cipher_suites()
-            .with_safe_default_kx_groups()
-            .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])?
-            .with_no_client_auth()
-            .with_single_cert(
-                rustls_pemfile::certs(&mut BufReader::new(File::open(args.cert_chain_pem)?))?
-                    .into_iter()
-                    .map(Certificate)
-                    .collect(),
-                rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(
-                    args.private_key_pem,
-                )?))?
-                .into_iter()
-                .map(PrivateKey)
-                .next()
-                .unwrap(),
-            )?,
+        rustls_config,
         args.bind_to,
         Arc::new(StaticFileService::new(args.document_root.canonicalize()?)),
     )
