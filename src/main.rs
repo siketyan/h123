@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Seek};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -76,11 +76,14 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 .next()
             {
                 Some(k) => k,
-                None => rustls_pemfile::rsa_private_keys(&mut privkey_reader)?
-                    .into_iter()
-                    .map(PrivateKey)
-                    .next()
-                    .unwrap(),
+                None => {
+                    privkey_reader.rewind()?;
+                    rustls_pemfile::rsa_private_keys(&mut privkey_reader)?
+                        .into_iter()
+                        .map(PrivateKey)
+                        .next()
+                        .unwrap()
+                }
             },
         )?;
 
