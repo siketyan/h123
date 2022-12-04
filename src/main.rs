@@ -59,6 +59,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let args = Cli::parse();
+    let mut privkey_reader = BufReader::new(File::open(args.private_key_pem)?);
     let rustls_config = &rustls::ServerConfig::builder()
         .with_safe_default_cipher_suites()
         .with_safe_default_kx_groups()
@@ -69,13 +70,18 @@ async fn run() -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(Certificate)
                 .collect(),
-            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(
-                args.private_key_pem,
-            )?))?
-            .into_iter()
-            .map(PrivateKey)
-            .next()
-            .unwrap(),
+            match rustls_pemfile::pkcs8_private_keys(&mut privkey_reader)?
+                .into_iter()
+                .map(PrivateKey)
+                .next()
+            {
+                Some(k) => k,
+                None => rustls_pemfile::rsa_private_keys(&mut privkey_reader)?
+                    .into_iter()
+                    .map(PrivateKey)
+                    .next()
+                    .unwrap(),
+            },
         )?;
 
     Ok(Server::new(
