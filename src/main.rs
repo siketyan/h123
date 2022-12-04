@@ -34,23 +34,32 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    use tokio::signal::unix::{signal, SignalKind};
+    #[cfg(target_family = "unix")]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
 
-    let mut sigint = signal(SignalKind::interrupt())?;
-    let mut sigterm = signal(SignalKind::terminate())?;
+        let mut sigint = signal(SignalKind::interrupt())?;
+        let mut sigterm = signal(SignalKind::terminate())?;
 
-    tokio::select!(
-        r = run() => {
-            match r {
-                Ok(_) => (),
-                Err(e) => error!("{}", e),
-            }
-        },
-        _ = sigint.recv() => {},
-        _ = sigterm.recv() => {},
-    );
+        tokio::select!(
+            r = run() => {
+                match r {
+                    Ok(_) => (),
+                    Err(e) => error!("{}", e),
+                }
+            },
+            _ = sigint.recv() => {},
+            _ = sigterm.recv() => {},
+        );
 
-    info!("Gracefully shutting down...");
+        info!("Gracefully shutting down...");
+    }
+
+    #[cfg(not(target_family = "unix"))]
+    match run().await {
+        Ok(_) => (),
+        Err(e) => error!("{}", e),
+    }
 
     Ok(())
 }
